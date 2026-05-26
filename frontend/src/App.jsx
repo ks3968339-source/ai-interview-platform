@@ -20,6 +20,7 @@ import CategoryCard from './components/CategoryCard';
 import CountdownTimer from './components/CountdownTimer';
 import FeedbackModal from './components/FeedbackModal';
 import PerformanceChart from './components/PerformanceChart';
+import AuthOverlay from './components/AuthOverlay';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5001/api';
 
@@ -60,6 +61,7 @@ const CATEGORIES = [
 
 export default function App() {
   // State variables
+  const [token, setToken] = useState(localStorage.getItem('token') || null);
   const [user, setUser] = useState(null);
   const [performance, setPerformance] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -76,21 +78,27 @@ export default function App() {
   const [activeQuestionText, setActiveQuestionText] = useState('');
   const [isModalOpen, setIsModalOpen] = useState(false);
 
-  // Initialize and load default user profile + metrics
+  // Initialize and load user profile + metrics
   useEffect(() => {
-    fetchProfile();
-  }, []);
+    fetchProfile(token);
+  }, [token]);
 
-  const fetchProfile = async () => {
+  const fetchProfile = async (activeToken) => {
     try {
       setLoading(true);
-      // 1. Get or create default user profile
-      const userRes = await fetch(`${API_BASE_URL}/users/profile`);
+      const headers = {};
+      if (activeToken) {
+        headers['Authorization'] = `Bearer ${activeToken}`;
+      }
+
+      // 1. Get authenticated user profile (or fallback to seed)
+      const userRes = await fetch(`${API_BASE_URL}/users/profile`, { headers });
+      if (!userRes.ok) throw new Error("Profile fetch failed");
       const userData = await userRes.json();
       setUser(userData);
 
       // 2. Fetch metrics and progress tracking
-      const perfRes = await fetch(`${API_BASE_URL}/users/${userData.id}/performance`);
+      const perfRes = await fetch(`${API_BASE_URL}/users/${userData.id}/performance`, { headers });
       const perfData = await perfRes.json();
       setPerformance(perfData);
     } catch (e) {
@@ -100,14 +108,33 @@ export default function App() {
     }
   };
 
+  // Auth Overlay Success Handler
+  const handleAuthSuccess = (userData, authToken) => {
+    localStorage.setItem('token', authToken);
+    setToken(authToken);
+    setUser(userData);
+  };
+
+  // Log Out Routine
+  const handleLogout = () => {
+    localStorage.removeItem('token');
+    setToken(null);
+    setUser(null);
+    setPerformance(null);
+    setScreen('dashboard');
+  };
+
   // Start interview workflow
   const handleSelectCategory = async (categoryName) => {
     try {
       setLoading(true);
       setSelectedCategory(categoryName);
       
-      // Fetch questions filtered by category
-      const qRes = await fetch(`${API_BASE_URL}/questions?category=${encodeURIComponent(categoryName)}`);
+      // Fetch questions filtered by category with auth headers
+      const headers = {};
+      if (token) headers['Authorization'] = `Bearer ${token}`;
+
+      const qRes = await fetch(`${API_BASE_URL}/questions?category=${encodeURIComponent(categoryName)}`, { headers });
       const qData = await qRes.json();
       
       setQuestions(qData);
@@ -129,11 +156,12 @@ export default function App() {
       setIsEvaluating(true);
       const currentQuestion = questions[currentQuestionIndex];
       
+      const headers = { 'Content-Type': 'application/json' };
+      if (token) headers['Authorization'] = `Bearer ${token}`;
+
       const response = await fetch(`${API_BASE_URL}/answers`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
+        headers,
         body: JSON.stringify({
           userId: user.id,
           questionId: currentQuestion.id,
@@ -158,7 +186,10 @@ export default function App() {
       setIsModalOpen(true);
 
       // Refresh stats in background
-      const perfRes = await fetch(`${API_BASE_URL}/users/${user.id}/performance`);
+      const headersRefresh = {};
+      if (token) headersRefresh['Authorization'] = `Bearer ${token}`;
+
+      const perfRes = await fetch(`${API_BASE_URL}/users/${user.id}/performance`, { headers: headersRefresh });
       const perfData = await perfRes.json();
       setPerformance(perfData);
 
@@ -192,6 +223,10 @@ export default function App() {
     return text.trim() ? text.trim().split(/\s+/).length : 0;
   };
 
+  if (!token) {
+    return <AuthOverlay onAuthSuccess={handleAuthSuccess} apiBaseUrl={API_BASE_URL} />;
+  }
+
   if (loading && !user) {
     return (
       <div className="min-h-screen bg-[#060913] flex flex-col items-center justify-center">
@@ -199,6 +234,10 @@ export default function App() {
         <p className="text-slate-400 font-medium">Initializing Practice Arena...</p>
       </div>
     );
+  }
+
+  if (!user) {
+    return <AuthOverlay onAuthSuccess={handleAuthSuccess} apiBaseUrl={API_BASE_URL} />;
   }
 
   return (
@@ -221,12 +260,18 @@ export default function App() {
 
           <div className="flex items-center gap-6">
             <div className="hidden sm:flex flex-col text-right">
-              <span className="text-sm font-bold text-slate-300">{user?.name || "John Doe"}</span>
-              <span className="text-xs text-slate-500">{user?.email || "john.doe@example.com"}</span>
+              <span className="text-sm font-bold text-slate-300">{user.name}</span>
+              <span className="text-xs text-slate-500">{user.email}</span>
             </div>
             <div className="w-10 h-10 rounded-full border border-slate-800 bg-slate-900 flex items-center justify-center text-sm font-bold text-indigo-400 shadow-inner">
-              JD
+              {user.name.split(' ').map(n => n[0]).join('').toUpperCase()}
             </div>
+            <button 
+              onClick={handleLogout}
+              className="text-xs font-bold text-rose-400 hover:text-rose-300 transition-colors bg-rose-500/5 hover:bg-rose-500/10 border border-rose-500/10 hover:border-rose-500/20 px-3.5 py-2 rounded-xl cursor-pointer"
+            >
+              Log Out
+            </button>
           </div>
         </div>
       </header>
