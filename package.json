@@ -1,0 +1,15 @@
+{
+  "name": "ai-interview-practice-platform",
+  "version": "1.0.0",
+  "description": "A full-stack platform for practicing technical interview questions with AI evaluation",
+  "scripts": {
+    "install:all": "npm install --prefix backend && npm install --prefix frontend",
+    "db:init": "npm run prisma:migrate --prefix backend && npm run prisma:seed --prefix backend",
+    "start:backend": "npm run start --prefix backend",
+    "start:frontend": "npm run dev --prefix frontend",
+    "start": "concurrently \"npm run start:backend\" \"npm run start:frontend\""
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2"
+  }
+}
